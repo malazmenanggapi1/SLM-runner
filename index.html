@@ -1,288 +1,1158 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SLM Runner — Qwen 0.8B (Wllama)</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLM Runner — Jalankan AI langsung di browser</title>
+<meta name="description" content="Pilih model AI, download sekali, jalankan sepenuhnya di browser lewat WebGPU. Tanpa server, tanpa API key.">
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #2a2f3a;
-    --text: #e8e8ec;
-    --muted: #8a90a0;
-    --accent: #5b8cff;
-    --bubble-user: #2a3550;
-    --bubble-bot: #1e2230;
+:root {
+  --bg: #14171c;
+  --panel: #1b1f26;
+  --panel-raised: #212630;
+  --border: #2a2f3a;
+  --text: #e7e9ed;
+  --text-muted: #8b93a1;
+  --accent: #4fd1b3;
+  --accent-dim: #37493f;
+  --warn: #f2a93b;
+  --danger: #e0616b;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --sans: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: 100vh;
+}
+
+/* ===== Rail ===== */
+.rail {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 24px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.rail-head h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.rail-sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rail-section-export {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+select, textarea, input {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+}
+
+select:focus, textarea:focus, input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+select {
+  width: 100%;
+  appearance: none;
+}
+
+.btn {
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0d1512;
+}
+.btn-primary:not(:disabled):hover { background: #67dcc1; }
+
+.btn-export {
+  background: var(--warn);
+  color: #241705;
+}
+.btn-export:not(:disabled):hover { background: #f7bb5c; }
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-dot.busy { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.status-dot.ready { background: var(--accent); }
+.status-dot.error { background: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.progress-track {
+  height: 6px;
+  background: var(--panel-raised);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.log {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Chat ===== */
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.empty-state {
+  margin: auto;
+  max-width: 420px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-state-sub { font-size: 13px; }
+
+.msg {
+  max-width: 640px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14.5px;
+}
+
+.msg-user {
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.msg-assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.msg-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 780px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  header {
-    padding: 14px 16px;
+  .rail {
+    border-right: none;
     border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    max-height: 46vh;
   }
-  header h1 { font-size: 15px; margin: 0 0 4px; }
-  #status { font-size: 12px; color: var(--muted); }
-  #progressWrap {
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 8px;
-    display: none;
-  }
-  #progressBar {
-    height: 100%;
-    width: 0%;
-    background: var(--accent);
-    transition: width 0.15s ease;
-  }
-  #modelPicker {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 8px;
-  }
-  #modelPicker input[type="file"] {
-    color: var(--muted);
-    font-size: 12px;
-  }
-  #loadBtn {
-    padding: 4px 12px;
-    font-size: 12px;
-    border-radius: 8px;
-  }
-  #chat {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .msg {
-    max-width: 85%;
-    padding: 10px 14px;
-    border-radius: 14px;
-    line-height: 1.45;
-    font-size: 14.5px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .msg.user {
-    align-self: flex-end;
-    background: var(--bubble-user);
-    border-bottom-right-radius: 4px;
-  }
-  .msg.bot {
-    align-self: flex-start;
-    background: var(--bubble-bot);
-    border-bottom-left-radius: 4px;
-  }
-  .msg.system {
-    align-self: center;
-    color: var(--muted);
-    font-size: 12px;
-    background: none;
-  }
-  footer {
-    padding: 12px;
-    border-top: 1px solid var(--border);
-    background: var(--panel);
-    display: flex;
-    gap: 8px;
-  }
-  #input {
-    flex: 1;
-    resize: none;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 12px;
-    font-size: 14.5px;
-    font-family: inherit;
-    max-height: 120px;
-  }
-  button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 0 18px;
-    font-size: 14px;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button.stop { background: #d9534f; }
+  .chat-log { padding: 18px 16px; }
+  .chat-input-row { padding: 12px 16px 16px; }
+}
+
 </style>
 </head>
 <body>
 
-<header>
-  <h1>SLM Runner — Qwen 0.8B</h1>
-  <div id="status">Pilih file GGUF dari perangkatmu untuk mulai.</div>
-  <div id="modelPicker">
-    <input type="file" id="modelFile" accept=".gguf" />
-    <button id="loadBtn">Muat Model</button>
-  </div>
-  <div id="progressWrap"><div id="progressBar"></div></div>
-</header>
+<div class="app">
 
-<div id="chat"></div>
+  <!-- ===== Control rail ===== -->
+  <aside class="rail" id="rail">
+    <header class="rail-head">
+      <h1>SLM Runner</h1>
+      <p class="rail-sub">AI jalan di browser kamu. Tidak ada yang dikirim ke server.</p>
+    </header>
 
-<footer>
-  <textarea id="input" rows="1" placeholder="Ketik pesan…" disabled></textarea>
-  <button id="sendBtn" disabled>Kirim</button>
-</footer>
+    <section class="rail-section">
+      <label class="field-label" for="model-select">Model</label>
+      <select id="model-select" disabled>
+        <option>Memuat daftar model…</option>
+      </select>
+      <p class="field-hint" id="model-hint"></p>
+      <button id="load-btn" class="btn btn-primary" disabled>Download &amp; Muat Model</button>
+    </section>
+
+    <section class="rail-section">
+      <div class="status-row">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Menunggu WebGPU…</span>
+      </div>
+      <div class="progress-track" id="progress-track" hidden>
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <pre class="log" id="log" aria-live="polite"></pre>
+    </section>
+
+    <section class="rail-section rail-section-export">
+      <label class="field-label">Bundel offline</label>
+      <p class="field-hint">Setelah model selesai dimuat, bungkus semuanya (mesin + bobot model) jadi satu paket statis yang bisa dijalankan tanpa internet.</p>
+      <button id="export-btn" class="btn btn-export" disabled>Download Web + Model (.zip)</button>
+      <p class="field-hint" id="export-hint"></p>
+    </section>
+  </aside>
+
+  <!-- ===== Chat panel ===== -->
+  <main class="chat">
+    <div class="chat-log" id="chat-log">
+      <div class="empty-state" id="empty-state">
+        <p>Pilih model di panel kiri, lalu tekan <strong>Download &amp; Muat Model</strong>.</p>
+        <p class="empty-state-sub">Model didownload sekali ke browser (cache), lalu semua inferensi berjalan lokal di GPU kamu lewat WebGPU.</p>
+      </div>
+    </div>
+    <form class="chat-input-row" id="chat-form">
+      <textarea id="chat-input" placeholder="Tulis pesan…" rows="1" disabled></textarea>
+      <button type="submit" class="btn btn-primary" id="send-btn" disabled>Kirim</button>
+    </form>
+  </main>
+
+</div>
 
 <script type="module">
-import { Wllama } from './wllama/esm/index.js';
+// ============================================================================
+// Semua logic (app + export) digabung di sini supaya repo cukup 1 file HTML.
+// ============================================================================
 
-// ====== KONFIGURASI — SESUAIKAN DI SINI ======
-// Path ke file wllama.js/.wasm milikmu (relatif terhadap index.html ini)
-const CONFIG_PATHS = {
-  'single-thread/wllama.js':        './wllama/esm/single-thread/wllama.js',
-  'single-thread/wllama.wasm':      './wllama/esm/single-thread/wllama.wasm',
-  'multi-thread/wllama.js':         './wllama/esm/multi-thread/wllama.js',
-  'multi-thread/wllama.wasm':       './wllama/esm/multi-thread/wllama.wasm',
-  'multi-thread/wllama.worker.mjs': './wllama/esm/multi-thread/wllama.worker.mjs',
+const STYLE_CSS_TEXT = `:root {
+  --bg: #14171c;
+  --panel: #1b1f26;
+  --panel-raised: #212630;
+  --border: #2a2f3a;
+  --text: #e7e9ed;
+  --text-muted: #8b93a1;
+  --accent: #4fd1b3;
+  --accent-dim: #37493f;
+  --warn: #f2a93b;
+  --danger: #e0616b;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --sans: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: 100vh;
+}
+
+/* ===== Rail ===== */
+.rail {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 24px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.rail-head h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.rail-sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rail-section-export {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+select, textarea, input {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+}
+
+select:focus, textarea:focus, input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+select {
+  width: 100%;
+  appearance: none;
+}
+
+.btn {
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0d1512;
+}
+.btn-primary:not(:disabled):hover { background: #67dcc1; }
+
+.btn-export {
+  background: var(--warn);
+  color: #241705;
+}
+.btn-export:not(:disabled):hover { background: #f7bb5c; }
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-dot.busy { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.status-dot.ready { background: var(--accent); }
+.status-dot.error { background: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.progress-track {
+  height: 6px;
+  background: var(--panel-raised);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.log {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Chat ===== */
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.empty-state {
+  margin: auto;
+  max-width: 420px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-state-sub { font-size: 13px; }
+
+.msg {
+  max-width: 640px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14.5px;
+}
+
+.msg-user {
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.msg-assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.msg-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 780px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+  }
+  .rail {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 46vh;
+  }
+  .chat-log { padding: 18px 16px; }
+  .chat-input-row { padding: 12px 16px 16px; }
+}
+`;
+
+// ============================================================================
+// export.js — "Download Web + Model"
+//
+// Ide: begitu sebuah model sudah didownload & jalan (artinya semua file
+// beratnya sudah tersimpan di Cache Storage browser), kita kumpulkan ulang
+// file-file itu + shell HTML/JS sendiri jadi satu paket .zip statis.
+// Paket itu, kalau diserve lewat static server mana pun (GitHub Pages,
+// `npx serve`, dst — BUKAN dibuka langsung via file://), akan jalan tanpa
+// perlu download apa pun lagi: seolah AI-nya sudah "built-in".
+//
+// Catatan jujur soal batasan pendekatan ini ada di README.md.
+// ============================================================================
+
+const JSZIP_CDN_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+
+function toLocalPath(url) {
+  const u = new URL(url);
+  return `assets/${u.hostname}${u.pathname}`;
+}
+
+async function loadJSZip() {
+  if (window.JSZip) return window.JSZip;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = JSZIP_CDN_URL;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Gagal mengambil JSZip dari CDN"));
+    document.head.appendChild(s);
+  });
+  return window.JSZip;
+}
+
+async function collectCachedAssets(onProgress) {
+  const manifest = [];
+  const cacheNames = await caches.keys();
+  let count = 0;
+
+  const zipEntries = [];
+
+  for (const name of cacheNames) {
+    const cache = await caches.open(name);
+    const requests = await cache.keys();
+    for (const req of requests) {
+      const res = await cache.match(req);
+      if (!res) continue;
+      const blob = await res.blob();
+      const localPath = toLocalPath(req.url);
+      manifest.push({ url: req.url, path: localPath });
+      zipEntries.push({ path: localPath, blob });
+      count++;
+      if (count % 5 === 0) onProgress(`Mengumpulkan file cache… (${count})`);
+    }
+  }
+
+  return { manifest, zipEntries };
+}
+
+function buildOfflineAppConfig(webllmConfig, modelId, manifest) {
+  const entry = webllmConfig.model_list.find((m) => m.model_id === modelId);
+  if (!entry) throw new Error(`Model "${modelId}" tidak ditemukan di daftar konfigurasi`);
+
+  const localModelBase = manifest.find((m) => m.url.startsWith(entry.model))
+    ? `./${toLocalPath(entry.model)}`
+    : entry.model;
+
+  const localModelLib = manifest.find((m) => m.url === entry.model_lib)
+    ? `./${toLocalPath(entry.model_lib)}`
+    : entry.model_lib;
+
+  return {
+    model_list: [
+      {
+        ...entry,
+        model: localModelBase.endsWith("/") ? localModelBase : `${localModelBase}/`,
+        model_lib: localModelLib,
+      },
+    ],
+  };
+}
+
+const OFFLINE_INDEX_HTML = (modelId) => `<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLM Runner — Offline (${modelId})</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail" id="rail">
+    <header class="rail-head">
+      <h1>SLM Runner</h1>
+      <p class="rail-sub">Paket offline — model "${modelId}" sudah tertanam, tidak perlu internet.</p>
+    </header>
+    <section class="rail-section">
+      <div class="status-row">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Memuat model dari file lokal…</span>
+      </div>
+      <div class="progress-track" id="progress-track" hidden>
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <pre class="log" id="log" aria-live="polite"></pre>
+    </section>
+  </aside>
+  <main class="chat">
+    <div class="chat-log" id="chat-log">
+      <div class="empty-state" id="empty-state">
+        <p>Model dimuat otomatis dari file yang ada di paket ini.</p>
+      </div>
+    </div>
+    <form class="chat-input-row" id="chat-form">
+      <textarea id="chat-input" placeholder="Tulis pesan…" rows="1" disabled></textarea>
+      <button type="submit" class="btn btn-primary" id="send-btn" disabled>Kirim</button>
+    </form>
+  </main>
+</div>
+<script type="module" src="js/offline-app.js"></script>
+</body>
+</html>
+`;
+
+async function exportOfflineBundle({ modelId, webllmCdnUrl, onProgress }) {
+  onProgress("Menyiapkan JSZip…");
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+
+  onProgress("Mengambil salinan runtime WebLLM…");
+  const runtimeRes = await fetch(webllmCdnUrl);
+  if (!runtimeRes.ok) throw new Error("Gagal mengunduh runtime WebLLM untuk dibundel");
+  const runtimeText = await runtimeRes.text();
+  zip.file("js/webllm-runtime.mjs", runtimeText);
+
+  onProgress("Mengumpulkan file model dari cache browser…");
+  const { manifest, zipEntries } = await collectCachedAssets(onProgress);
+  if (zipEntries.length === 0) {
+    throw new Error("Tidak ada file model di cache. Pastikan model sudah selesai dimuat dulu.");
+  }
+  for (const { path, blob } of zipEntries) {
+    zip.file(path, blob);
+  }
+
+  onProgress("Menyusun konfigurasi offline…");
+  const webllmModule = await import(/* webpackIgnore: true */ webllmCdnUrl);
+  const offlineConfig = buildOfflineAppConfig(webllmModule.prebuiltAppConfig, modelId, manifest);
+  zip.file("model-config.json", JSON.stringify(offlineConfig, null, 2));
+
+  const offlineAppJs = `// Auto-generated shell offline untuk model "${modelId}".
+import * as webllm from "./webllm-runtime.mjs";
+
+const els = {
+  statusDot: document.getElementById("status-dot"),
+  statusText: document.getElementById("status-text"),
+  progressTrack: document.getElementById("progress-track"),
+  progressFill: document.getElementById("progress-fill"),
+  log: document.getElementById("log"),
+  chatLog: document.getElementById("chat-log"),
+  emptyState: document.getElementById("empty-state"),
+  chatForm: document.getElementById("chat-form"),
+  chatInput: document.getElementById("chat-input"),
+  sendBtn: document.getElementById("send-btn"),
 };
 
-const SYSTEM_PROMPT = 'Kamu adalah asisten AI yang membantu, ringkas, dan berbahasa Indonesia.';
-const N_PREDICT = 512;
-// ==============================================
+function log(line) {
+  els.log.textContent += line + "\\n";
+  els.log.scrollTop = els.log.scrollHeight;
+}
 
-const elStatus = document.getElementById('status');
-const elProgressWrap = document.getElementById('progressWrap');
-const elProgressBar = document.getElementById('progressBar');
-const elChat = document.getElementById('chat');
-const elInput = document.getElementById('input');
-const elSend = document.getElementById('sendBtn');
-const elModelFile = document.getElementById('modelFile');
-const elLoadBtn = document.getElementById('loadBtn');
-
-let wllama = null;
-let history = [{ role: 'system', content: SYSTEM_PROMPT }];
-let generating = false;
-
-function addMsg(role, text) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}`;
+function appendMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg msg-" + role;
   div.textContent = text;
-  elChat.appendChild(div);
-  elChat.scrollTop = elChat.scrollHeight;
+  els.chatLog.appendChild(div);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
   return div;
 }
 
-function setStatus(text) {
-  elStatus.textContent = text;
+let history = [];
+let engine;
+
+async function boot() {
+  const cfgRes = await fetch("./model-config.json");
+  const appConfig = await cfgRes.json();
+  const modelId = appConfig.model_list[0].model_id;
+
+  engine = new webllm.MLCEngine();
+  engine.setInitProgressCallback((report) => {
+    els.progressTrack.hidden = false;
+    els.progressFill.style.width = Math.round(report.progress * 100) + "%";
+    els.statusText.textContent = report.text || "Memuat…";
+  });
+
+  try {
+    await engine.reload(modelId, undefined, appConfig);
+    els.statusText.textContent = "Siap — " + modelId;
+    els.statusDot.className = "status-dot ready";
+    els.progressTrack.hidden = true;
+    els.chatInput.disabled = false;
+    els.sendBtn.disabled = false;
+    els.emptyState.hidden = true;
+  } catch (err) {
+    els.statusText.textContent = "Gagal memuat model";
+    els.statusDot.className = "status-dot error";
+    log("Error: " + err.message);
+  }
 }
 
-async function loadModelFromLocalFile() {
-  const files = elModelFile.files;
-  if (!files || files.length === 0) {
-    setStatus('Pilih file .gguf dulu.');
+document.getElementById("chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = els.chatInput.value.trim();
+  if (!text || !engine) return;
+  els.chatInput.value = "";
+  appendMessage("user", text);
+  history.push({ role: "user", content: text });
+  const out = appendMessage("assistant", "…");
+  els.sendBtn.disabled = true;
+  try {
+    const stream = await engine.chat.completions.create({ messages: history, stream: true });
+    let full = "";
+    for await (const chunk of stream) {
+      full += chunk.choices?.[0]?.delta?.content || "";
+      out.textContent = full || "…";
+    }
+    history.push({ role: "assistant", content: full });
+  } catch (err) {
+    out.textContent = "[error] " + err.message;
+  } finally {
+    els.sendBtn.disabled = false;
+  }
+});
+
+boot();
+`;
+  zip.file("js/offline-app.js", offlineAppJs);
+  zip.file("index.html", OFFLINE_INDEX_HTML(modelId));
+
+  onProgress("Menyalin stylesheet…");
+  zip.file("css/style.css", STYLE_CSS_TEXT);
+
+  zip.file(
+    "README.txt",
+    `Paket offline SLM Runner — model: ${modelId}\n\n` +
+      `Cara pakai:\n` +
+      `1. Ekstrak zip ini.\n` +
+      `2. Jalankan static server di folder ini, contoh:\n` +
+      `     npx serve .\n` +
+      `   atau\n` +
+      `     python3 -m http.server 8080\n` +
+      `3. Buka http://localhost:PORT di browser yang mendukung WebGPU (Chrome/Edge terbaru).\n\n` +
+      `PENTING: jangan buka index.html langsung lewat file:// — browser memblokir\n` +
+      `fetch() ke file lokal dari protokol file://, jadi harus lewat http(s)://,\n` +
+      `baik itu server lokal atau hosting statis (GitHub Pages, Netlify, dll).\n`
+  );
+
+  onProgress("Membungkus jadi .zip…");
+  const blob = await zip.generateAsync({ type: "blob" }, (meta) => {
+    onProgress(`Kompresi… ${Math.round(meta.percent)}%`);
+  });
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `slm-runner-offline-${modelId.replace(/[^a-z0-9.-]/gi, "_")}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+
+// ============================================================================
+// SLM Runner — app.js
+//
+// Semua "engine" AI (runtime WASM + JS) DIAMBIL OTOMATIS dari CDN saat
+// halaman dibuka — tidak ada satupun file besar yang perlu dicommit ke repo.
+// Model AI yang dipilih pengguna juga didownload langsung dari sumbernya
+// (Hugging Face, lewat MLC) ke cache browser, lalu dijalankan di GPU
+// pengguna lewat WebGPU. Tidak ada server, tidak ada backend.
+// ============================================================================
+
+// CDN tempat runtime WebLLM diambil. Ganti versi di sini kalau perlu upgrade.
+const WEBLLM_CDN_URL = "https://esm.run/@mlc-ai/web-llm";
+
+// Supaya bundel yang didownload tidak raksasa buat pengguna biasa, daftar
+// model dibatasi ke varian kecil (kira-kira di bawah ~2.5B parameter,
+// kuantisasi 4-bit). Silakan tambah/kurangi ID di sini — ID harus persis
+// sama dengan model_id di prebuiltAppConfig milik WebLLM.
+const PREFERRED_MODEL_HINTS = [
+  "Qwen2.5-0.5B",
+  "Qwen2.5-1.5B",
+  "Llama-3.2-1B",
+  "Llama-3.2-3B",
+  "Phi-3.5-mini",
+  "gemma-2-2b",
+  "SmolLM2-360M",
+  "SmolLM2-1.7B",
+  "TinyLlama-1.1B",
+];
+
+const els = {
+  modelSelect: document.getElementById("model-select"),
+  modelHint: document.getElementById("model-hint"),
+  loadBtn: document.getElementById("load-btn"),
+  statusDot: document.getElementById("status-dot"),
+  statusText: document.getElementById("status-text"),
+  progressTrack: document.getElementById("progress-track"),
+  progressFill: document.getElementById("progress-fill"),
+  log: document.getElementById("log"),
+  exportBtn: document.getElementById("export-btn"),
+  exportHint: document.getElementById("export-hint"),
+  chatLog: document.getElementById("chat-log"),
+  emptyState: document.getElementById("empty-state"),
+  chatForm: document.getElementById("chat-form"),
+  chatInput: document.getElementById("chat-input"),
+  sendBtn: document.getElementById("send-btn"),
+};
+
+let webllm = null;
+let engine = null;
+let currentModelId = null;
+let modelList = [];
+let history = [];
+let isGenerating = false;
+
+function log(line) {
+  const time = new Date().toLocaleTimeString("id-ID", { hour12: false });
+  els.log.textContent += `[${time}] ${line}\n`;
+  els.log.scrollTop = els.log.scrollHeight;
+}
+
+function setStatus(text, kind) {
+  els.statusText.textContent = text;
+  els.statusDot.className = "status-dot" + (kind ? ` ${kind}` : "");
+}
+
+function setProgress(fraction) {
+  if (fraction == null) {
+    els.progressTrack.hidden = true;
     return;
   }
+  els.progressTrack.hidden = false;
+  els.progressFill.style.width = `${Math.round(fraction * 100)}%`;
+}
 
-  elLoadBtn.disabled = true;
-  elModelFile.disabled = true;
-  addMsg('system', `Memuat model dari file lokal: ${files[0].name}`);
-  elProgressWrap.style.display = 'block';
-
+async function checkWebGPU() {
+  if (!("gpu" in navigator)) {
+    setStatus("WebGPU tidak tersedia di browser ini", "error");
+    log("Browser ini tidak mengekspos navigator.gpu. Coba Chrome/Edge versi terbaru.");
+    return false;
+  }
   try {
-    wllama = new Wllama(CONFIG_PATHS);
-    // wllama.loadModel menerima File/Blob langsung — model tidak pernah
-    // dikirim ke server mana pun, semua diproses di browser.
-    await wllama.loadModel([files[0]], {
-      n_ctx: 4096,
-      progressCallback: ({ loaded, total }) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 0;
-        elProgressBar.style.width = pct + '%';
-        setStatus(`Memuat model… ${pct}%`);
-      },
-    });
-    elProgressWrap.style.display = 'none';
-    setStatus('Model siap.');
-    elInput.disabled = false;
-    elSend.disabled = false;
-    elInput.focus();
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      setStatus("WebGPU ada, tapi tidak ada GPU adapter", "error");
+      return false;
+    }
+    return true;
   } catch (err) {
-    console.error(err);
-    setStatus('Gagal memuat model — cek console.');
-    elLoadBtn.disabled = false;
-    elModelFile.disabled = false;
+    setStatus("Gagal inisialisasi WebGPU", "error");
+    log(`Error WebGPU: ${err.message}`);
+    return false;
   }
 }
 
-async function send() {
-  const text = elInput.value.trim();
-  if (!text || generating) return;
+async function loadWebLLMRuntime() {
+  log(`Mengambil runtime WebLLM dari CDN (${WEBLLM_CDN_URL})…`);
+  webllm = await import(/* webpackIgnore: true */ WEBLLM_CDN_URL);
+  log("Runtime WebLLM siap.");
+  return webllm;
+}
 
-  elInput.value = '';
-  addMsg('user', text);
-  history.push({ role: 'user', content: text });
+function populateModelSelect() {
+  const all = webllm.prebuiltAppConfig.model_list;
 
-  generating = true;
-  elSend.textContent = 'Stop';
-  elSend.classList.add('stop');
-  elInput.disabled = true;
+  // Utamakan model kecil yang cocok dijalankan di laptop/HP biasa.
+  const preferred = all.filter((m) =>
+    PREFERRED_MODEL_HINTS.some((hint) => m.model_id.includes(hint))
+  );
+  modelList = preferred.length > 0 ? preferred : all;
 
-  const botDiv = addMsg('bot', '');
-  let full = '';
+  els.modelSelect.innerHTML = "";
+  for (const m of modelList) {
+    const opt = document.createElement("option");
+    opt.value = m.model_id;
+    const sizeMB = m.vram_required_MB ? ` (~${Math.round(m.vram_required_MB)} MB VRAM)` : "";
+    opt.textContent = m.model_id + sizeMB;
+    els.modelSelect.appendChild(opt);
+  }
+  els.modelSelect.disabled = false;
+  els.loadBtn.disabled = false;
+  updateModelHint();
+}
+
+function updateModelHint() {
+  const m = modelList.find((x) => x.model_id === els.modelSelect.value);
+  if (!m) return;
+  const size = m.vram_required_MB ? `${Math.round(m.vram_required_MB)} MB` : "tidak diketahui";
+  els.modelHint.textContent = `Perkiraan ukuran download & VRAM: ${size}. Didownload sekali, lalu dicache browser.`;
+}
+
+async function loadSelectedModel() {
+  const modelId = els.modelSelect.value;
+  if (!modelId) return;
+
+  els.loadBtn.disabled = true;
+  els.modelSelect.disabled = true;
+  els.exportBtn.disabled = true;
+  isGenerating = false;
+  setStatus("Menyiapkan model…", "busy");
+  setProgress(0);
+  log(`Memuat model: ${modelId}`);
 
   try {
-    const reply = await wllama.createChatCompletion(history, {
-      nPredict: N_PREDICT,
-      sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
-      onNewToken: (token, piece, currentText) => {
-        full = currentText;
-        botDiv.textContent = full;
-        elChat.scrollTop = elChat.scrollHeight;
-      },
-    });
-    full = reply || full;
-    botDiv.textContent = full;
-    history.push({ role: 'assistant', content: full });
+    if (!engine) {
+      engine = new webllm.MLCEngine();
+      engine.setInitProgressCallback((report) => {
+        setProgress(report.progress);
+        setStatus(report.text || "Mengunduh…", "busy");
+      });
+    }
+
+    await engine.reload(modelId);
+    currentModelId = modelId;
+    history = [];
+
+    setStatus(`Siap — ${modelId}`, "ready");
+    setProgress(null);
+    log(`Model "${modelId}" berhasil dimuat dan siap dipakai.`);
+
+    els.chatInput.disabled = false;
+    els.sendBtn.disabled = false;
+    els.exportBtn.disabled = false;
+    els.exportHint.textContent = "";
+    els.emptyState.hidden = true;
   } catch (err) {
-    console.error(err);
-    botDiv.textContent = '[error saat generate — lihat console]';
+    setStatus("Gagal memuat model", "error");
+    setProgress(null);
+    log(`Error saat memuat model: ${err.message}`);
   } finally {
-    generating = false;
-    elSend.textContent = 'Kirim';
-    elSend.classList.remove('stop');
-    elInput.disabled = false;
-    elInput.focus();
+    els.loadBtn.disabled = false;
+    els.modelSelect.disabled = false;
   }
 }
 
-elSend.addEventListener('click', () => {
-  if (generating) {
-    wllama?.stopCompletion?.();
-  } else {
-    send();
-  }
-});
+function appendMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = `msg msg-${role}`;
+  div.textContent = text;
+  els.chatLog.appendChild(div);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return div;
+}
 
-elInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
+async function sendMessage(e) {
+  e.preventDefault();
+  const text = els.chatInput.value.trim();
+  if (!text || !engine || isGenerating) return;
+
+  els.chatInput.value = "";
+  appendMessage("user", text);
+  history.push({ role: "user", content: text });
+
+  const assistantEl = appendMessage("assistant", "…");
+  isGenerating = true;
+  els.sendBtn.disabled = true;
+
+  try {
+    const stream = await engine.chat.completions.create({
+      messages: history,
+      stream: true,
+      temperature: 0.7,
+    });
+
+    let full = "";
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content || "";
+      full += delta;
+      assistantEl.textContent = full || "…";
+      els.chatLog.scrollTop = els.chatLog.scrollHeight;
+    }
+
+    history.push({ role: "assistant", content: full });
+
+    const stats = await engine.runtimeStatsText?.();
+    if (stats) {
+      const meta = document.createElement("div");
+      meta.className = "msg-meta";
+      meta.textContent = stats;
+      assistantEl.appendChild(document.createElement("br"));
+      assistantEl.appendChild(meta);
+    }
+  } catch (err) {
+    assistantEl.textContent = `[error] ${err.message}`;
+    log(`Error saat generate: ${err.message}`);
+  } finally {
+    isGenerating = false;
+    els.sendBtn.disabled = false;
+    els.chatInput.focus();
+  }
+}
+
+async function handleExport() {
+  if (!currentModelId) return;
+  els.exportBtn.disabled = true;
+  try {
+    await exportOfflineBundle({
+      modelId: currentModelId,
+      webllmCdnUrl: WEBLLM_CDN_URL,
+      onProgress: (msg) => {
+        els.exportHint.textContent = msg;
+        log(`[export] ${msg}`);
+      },
+    });
+    els.exportHint.textContent = "Selesai — cek folder Downloads kamu.";
+  } catch (err) {
+    els.exportHint.textContent = `Gagal export: ${err.message}`;
+    log(`[export] Error: ${err.message}`);
+  } finally {
+    els.exportBtn.disabled = false;
+  }
+}
+
+// Auto-resize textarea
+els.chatInput.addEventListener("input", () => {
+  els.chatInput.style.height = "auto";
+  els.chatInput.style.height = `${Math.min(els.chatInput.scrollHeight, 160)}px`;
+});
+els.chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    send();
+    els.chatForm.requestSubmit();
   }
 });
 
-elLoadBtn.addEventListener('click', loadModelFromLocalFile);
+els.modelSelect.addEventListener("change", updateModelHint);
+els.loadBtn.addEventListener("click", loadSelectedModel);
+els.chatForm.addEventListener("submit", sendMessage);
+els.exportBtn.addEventListener("click", handleExport);
+
+// ===== Boot =====
+(async function init() {
+  const ok = await checkWebGPU();
+  if (!ok) return;
+
+  setStatus("Mengambil runtime & daftar model…", "busy");
+  try {
+    await loadWebLLMRuntime();
+    populateModelSelect();
+    setStatus("Pilih model, lalu muat", null);
+  } catch (err) {
+    setStatus("Gagal mengambil runtime dari CDN", "error");
+    log(`Error: ${err.message}. Cek koneksi internet lalu reload halaman.`);
+  }
+})();
+
 </script>
 </body>
 </html>
