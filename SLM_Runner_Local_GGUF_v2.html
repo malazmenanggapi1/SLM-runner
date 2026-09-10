@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLM Runner — Local GGUF Browser</title>
+<meta name="description" content="Pilih GGUF lokal dan jalankan di browser lewat WebGPU. Tanpa upload model.">
+<style>
+:root{--bg:#14171c;--panel:#1b1f26;--panel-raised:#212630;--border:#2a2f3a;--text:#e7e9ed;--text-muted:#8b93a1;--accent:#4fd1b3;--accent-dim:#37493f;--warn:#f2a93b;--danger:#e0616b;--mono:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;--sans:-apple-system,"Segoe UI",Inter,system-ui,sans-serif;--radius:8px}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.5}
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh}.rail{background:var(--panel);border-right:1px solid var(--border);padding:24px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:22px}.rail-head h1{font-size:18px;margin:0 0 4px}.rail-sub{margin:0;color:var(--text-muted);font-size:13px}.rail-section{display:flex;flex-direction:column;gap:8px}.rail-section-export{margin-top:auto;padding-top:18px;border-top:1px solid var(--border)}.field-label{font-size:12px;color:var(--text-muted);font-weight:600}.field-hint{margin:0;font-size:12.5px;color:var(--text-muted)}
+input[type=file],textarea{font-family:var(--sans);font-size:14px;color:var(--text);background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px}input[type=file]{width:100%;cursor:pointer}
+.btn{border:none;border-radius:var(--radius);padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer}.btn:disabled{opacity:.4;cursor:not-allowed}.btn-primary{background:var(--accent);color:#0d1512}.btn-secondary{background:var(--panel-raised);color:var(--text);border:1px solid var(--border)}.btn-warn{background:var(--warn);color:#241705}
+.status-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--text-muted);flex-shrink:0}.status-dot.busy{background:var(--warn);animation:pulse 1.2s ease-in-out infinite}.status-dot.ready{background:var(--accent)}.status-dot.error{background:var(--danger)}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.progress-track{height:6px;background:var(--panel-raised);border-radius:999px;overflow:hidden;border:1px solid var(--border)}.progress-fill{height:100%;width:0;background:var(--accent);transition:width .2s ease}
+.log{margin:0;font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--text-muted);background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;max-height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.model-card,.offline-note{padding:10px;border:1px solid var(--border);background:var(--panel-raised);border-radius:var(--radius);font-size:12.5px;color:var(--text-muted)}.model-card strong{color:var(--text);display:block;margin-bottom:3px;word-break:break-all}
+.chat{display:flex;flex-direction:column;height:100vh}.chat-log{flex:1;overflow-y:auto;padding:28px 24px;display:flex;flex-direction:column;gap:14px}.empty-state{margin:auto;max-width:480px;text-align:center;color:var(--text-muted)}.empty-state-sub{font-size:13px}.msg{max-width:720px;padding:10px 14px;border-radius:var(--radius);white-space:pre-wrap;word-break:break-word;font-size:14.5px}.msg-user{align-self:flex-end;background:var(--accent-dim);color:var(--text)}.msg-assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--border)}
+.chat-input-row{display:flex;gap:10px;padding:16px 24px 20px;border-top:1px solid var(--border);background:var(--bg)}.chat-input-row textarea{flex:1;resize:none;max-height:160px}
+@media(max-width:780px){.app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:100dvh}.rail{border-right:none;border-bottom:1px solid var(--border);max-height:52vh}.chat-log{padding:18px 16px}.chat-input-row{padding:12px 16px 16px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="rail">
+<header class="rail-head"><h1>SLM Runner</h1><p class="rail-sub">Pilih GGUF yang sudah kamu punya. Model tidak dikirim ke server.</p></header>
+
+<section class="rail-section">
+<label class="field-label" for="model-files">Model GGUF lokal</label>
+<input id="model-files" type="file" accept=".gguf" multiple>
+<p class="field-hint">Bisa 1 GGUF atau beberapa shard seperti 00001-of-00002.gguf.</p>
+<div class="model-card" id="model-card"><strong>Belum ada model</strong>Pilih file GGUF dari perangkat.</div>
+<button id="load-btn" class="btn btn-primary" disabled>Jalankan Model Lokal</button>
+</section>
+
+<section class="rail-section">
+<div class="status-row"><span class="status-dot" id="status-dot"></span><span id="status-text">Menunggu model…</span></div>
+<div class="progress-track" id="progress-track" hidden><div class="progress-fill" id="progress-fill"></div></div>
+<pre class="log" id="log" aria-live="polite"></pre>
+</section>
+
+<section class="rail-section">
+<label class="field-label">Runtime llama.cpp</label>
+<div class="offline-note" id="runtime-note">Model lokal, runtime dipin ke versi bridge tertentu. Internet hanya diperlukan untuk mengambil runtime pada tahap ini.</div>
+<button id="runtime-btn" class="btn btn-secondary">Siapkan Runtime</button>
+</section>
+
+<section class="rail-section rail-section-export">
+<label class="field-label">Portable / offline</label>
+<p class="field-hint">Versi ini memprioritaskan GGUF lokal dulu. Single-file penuh akan dibuat setelah runtime self-contained diuji, bukan dipaksakan setengah jadi.</p>
+<button id="export-btn" class="btn btn-warn" disabled>Single-file: tahap berikutnya</button>
+</section>
+</aside>
+
+<main class="chat">
+<div class="chat-log" id="chat-log"><div class="empty-state" id="empty-state"><p><strong>Pilih model GGUF yang sudah kamu download.</strong></p><p class="empty-state-sub">Tidak ada tombol download model dari web. File dibaca dari perangkat dan diproses lokal di browser.</p></div></div>
+<form class="chat-input-row" id="chat-form"><textarea id="chat-input" placeholder="Tulis pesan…" rows="1" disabled></textarea><button type="submit" class="btn btn-primary" id="send-btn" disabled>Kirim</button></form>
+</main>
+</div>
+<script type="module">
+const BRIDGE_VERSION="v0.1.21";
+const BRIDGE_BASE="https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@"+BRIDGE_VERSION;
+const BRIDGE_MODULE_URL=BRIDGE_BASE+"/llama_webgpu_bridge.js";
+const BRIDGE_CORE_URL=BRIDGE_BASE+"/llama_webgpu_core.js";
+const BRIDGE_WASM_URL=BRIDGE_BASE+"/llama_webgpu_core.wasm";
+const BRIDGE_WORKER_URL=BRIDGE_BASE+"/llama_webgpu_bridge_worker.js";
+
+const els={
+ files:document.getElementById("model-files"),modelCard:document.getElementById("model-card"),
+ loadBtn:document.getElementById("load-btn"),runtimeBtn:document.getElementById("runtime-btn"),
+ runtimeNote:document.getElementById("runtime-note"),statusDot:document.getElementById("status-dot"),
+ statusText:document.getElementById("status-text"),progressTrack:document.getElementById("progress-track"),
+ progressFill:document.getElementById("progress-fill"),log:document.getElementById("log"),
+ chatLog:document.getElementById("chat-log"),emptyState:document.getElementById("empty-state"),
+ chatForm:document.getElementById("chat-form"),chatInput:document.getElementById("chat-input"),
+ sendBtn:document.getElementById("send-btn"),exportBtn:document.getElementById("export-btn")
+};
+
+let Bridge=null,bridge=null,selectedFiles=[],selectedUrls=[],modelLoaded=false,history=[],generating=false;
+
+function log(m){const t=new Date().toLocaleTimeString("id-ID",{hour12:false});els.log.textContent+="["+t+"] "+m+"
+";els.log.scrollTop=els.log.scrollHeight}
+function status(t,k=""){els.statusText.textContent=t;els.statusDot.className="status-dot"+(k?" "+k:"")}
+function progress(v){if(v==null){els.progressTrack.hidden=true;return}els.progressTrack.hidden=false;els.progressFill.style.width=Math.max(0,Math.min(100,v*100))+"%"}
+function bytes(n){if(!Number.isFinite(n))return "?";const u=["B","KB","MB","GB","TB"];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++}return x.toFixed(i?2:0)+" "+u[i]}
+
+async function checkWebGPU(){
+ if(!("gpu" in navigator)){status("WebGPU tidak tersedia","error");log("Gunakan Chrome/Edge terbaru dengan WebGPU.");return false}
+ try{const a=await navigator.gpu.requestAdapter();if(!a){status("GPU WebGPU tidak ditemukan","error");return false}return true}
+ catch(e){status("WebGPU gagal diperiksa","error");log(e.message);return false}
+}
+
+async function loadRuntime(){
+ if(Bridge)return Bridge;
+ els.runtimeBtn.disabled=true;status("Menyiapkan runtime llama.cpp…","busy");log("Memuat bridge runtime "+BRIDGE_VERSION+"…");
+ try{
+  const mod=await import(BRIDGE_MODULE_URL);
+  Bridge=mod.LlamaWebGpuBridge;
+  if(!Bridge)throw new Error("LlamaWebGpuBridge tidak ditemukan.");
+  els.runtimeNote.textContent="Runtime siap. Model berikutnya dibaca dari file lokal.";
+  log("Runtime llama.cpp siap.");
+  status(selectedFiles.length?"Model lokal siap dimuat":"Pilih model GGUF");
+  return Bridge;
+ }catch(e){status("Runtime gagal dimuat","error");log("Runtime error: "+e.message);throw e}
+ finally{els.runtimeBtn.disabled=false}
+}
+
+function clearUrls(){for(const u of selectedUrls)URL.revokeObjectURL(u);selectedUrls=[]}
+
+function updateSelection(){
+ clearUrls();selectedFiles=[...els.files.files];
+ if(!selectedFiles.length){els.modelCard.innerHTML="<strong>Belum ada model</strong>Pilih file GGUF dari perangkat.";els.loadBtn.disabled=true;return}
+ const bad=selectedFiles.filter(f=>!f.name.toLowerCase().endsWith(".gguf"));
+ if(bad.length){els.modelCard.innerHTML="<strong>File tidak valid</strong>Hanya .gguf yang diterima.";els.loadBtn.disabled=true;return}
+ const total=selectedFiles.reduce((s,f)=>s+f.size,0);
+ els.modelCard.innerHTML="<strong>"+selectedFiles.length+" file model dipilih</strong>"+selectedFiles.map(f=>f.name).join("<br>")+"<br>"+bytes(total)+" total";
+ els.loadBtn.disabled=false;status("Model lokal siap dimuat")
+}
+
+async function loadLocalModel(){
+ if(!selectedFiles.length)return;
+ els.loadBtn.disabled=true;els.files.disabled=true;modelLoaded=false;history=[];progress(0);status("Menyiapkan model lokal…","busy");
+ try{
+  if(!(await checkWebGPU()))throw new Error("WebGPU tidak tersedia.");
+  await loadRuntime();
+  if(bridge){try{await bridge.dispose()}catch(_){}bridge=null}
+  selectedUrls=selectedFiles.map(f=>URL.createObjectURL(f));
+  bridge=new Bridge({
+   coreModuleUrl:BRIDGE_CORE_URL,wasmUrl:BRIDGE_WASM_URL,workerUrl:BRIDGE_WORKER_URL,
+   threads:Math.max(1,Math.min(4,navigator.hardwareConcurrency||2)),
+   nGpuLayers:-1,preferMemory64:true,cacheName:"slm-runner-local-models-v1"
+  });
+  log("Membaca GGUF dari perangkat. Model tidak di-upload.");
+  const source=selectedUrls.length===1?selectedUrls[0]:selectedUrls;
+  await bridge.loadModelFromUrl(source,{nCtx:2048,nGpuLayers:-1,progressCallback:p=>{
+   if(p&&p.total)progress(p.loaded/p.total);else progress(null)
+  }});
+  modelLoaded=true;
+  const meta=bridge.getModelMetadata?.()||{};
+  status("Model siap","ready");progress(null);log("Model berhasil dimuat.");
+  log("Backend: "+(bridge.getBackendName?.()||"runtime")+" | "+(bridge.isGpuActive?.()?"WebGPU aktif":"WASM/CPU"));
+  if(meta["llamadart.webgpu.model_bytes"])log("Ukuran model: "+bytes(Number(meta["llamadart.webgpu.model_bytes"])));
+  els.chatInput.disabled=false;els.sendBtn.disabled=false;els.emptyState.hidden=true;els.exportBtn.disabled=false;
+ }catch(e){
+  modelLoaded=false;progress(null);status("Gagal memuat model","error");log("Model error: "+(e?.message||e));
+  els.chatInput.disabled=true;els.sendBtn.disabled=true;
+ }finally{els.loadBtn.disabled=false;els.files.disabled=false}
+}
+
+function appendMessage(role,text){const d=document.createElement("div");d.className="msg msg-"+role;d.textContent=text;els.chatLog.appendChild(d);els.chatLog.scrollTop=els.chatLog.scrollHeight;return d}
+
+async function sendMessage(e){
+ e.preventDefault();const text=els.chatInput.value.trim();if(!text||!bridge||!modelLoaded||generating)return;
+ els.chatInput.value="";appendMessage("user",text);history.push({role:"user",content:text});
+ const out=appendMessage("assistant","…");generating=true;els.sendBtn.disabled=true;status("Menghasilkan…","busy");
+ try{
+  let prompt;try{prompt=await bridge.applyChatTemplate(history,true)}catch(_){prompt=history.map(m=>m.role+": "+m.content).join("
+")+"
+assistant:"}
+  let full="";
+  await bridge.createCompletion(prompt,{nPredict:256,temp:.7,topK:40,topP:.95,penalty:1.1,tokenEventEncoding:"text",emitCurrentTextOnToken:true,onToken:(piece,currentText)=>{
+   const s=typeof piece==="string"?piece:new TextDecoder().decode(piece);full=currentText||(full+s);out.textContent=full||"…";els.chatLog.scrollTop=els.chatLog.scrollHeight
+  }});
+  if(!full)full="(Model tidak menghasilkan teks.)";out.textContent=full;history.push({role:"assistant",content:full});status("Siap","ready");
+ }catch(e){out.textContent="[error] "+(e?.message||e);log("Generation error: "+(e?.message||e));status("Generation gagal","error")}
+ finally{generating=false;els.sendBtn.disabled=false;els.chatInput.focus()}
+}
+
+els.files.addEventListener("change",updateSelection);
+els.loadBtn.addEventListener("click",loadLocalModel);
+els.runtimeBtn.addEventListener("click",loadRuntime);
+els.chatForm.addEventListener("submit",sendMessage);
+els.chatInput.addEventListener("input",()=>{els.chatInput.style.height="auto";els.chatInput.style.height=Math.min(els.chatInput.scrollHeight,160)+"px"});
+els.chatInput.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();els.chatForm.requestSubmit()}});
+
+(async()=>{if(await checkWebGPU()){status("Pilih model GGUF lokal");log("Mode Local GGUF aktif.");log("Tidak ada download model dari web.")}})();
+</script>
+</body>
+</html>
+`;
+
+async function exportOfflineBundle({ modelId, webllmCdnUrl, onProgress }) {
+  onProgress("Menyiapkan JSZip…");
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+
+  onProgress("Mengambil salinan runtime WebLLM…");
+  const runtimeRes = await fetch(webllmCdnUrl);
+  if (!runtimeRes.ok) throw new Error("Gagal mengunduh runtime WebLLM untuk dibundel");
+  const runtimeText = await runtimeRes.text();
+  zip.file("js/webllm-runtime.mjs", runtimeText);
+
+  onProgress("Mengumpulkan file model dari cache browser…");
+  const { manifest, zipEntries } = await collectCachedAssets(onProgress);
+  if (zipEntries.length === 0) {
+    throw new Error("Tidak ada file model di cache. Pastikan model sudah selesai dimuat dulu.");
+  }
+  for (const { path, blob } of zipEntries) {
+    zip.file(path, blob);
+  }
+
+  onProgress("Menyusun konfigurasi offline…");
+  const webllmModule = await import(/* webpackIgnore: true */ webllmCdnUrl);
+  const offlineConfig = buildOfflineAppConfig(webllmModule.prebuiltAppConfig, modelId, manifest);
+  zip.file("model-config.json", JSON.stringify(offlineConfig, null, 2));
+
+  const offlineAppJs = `// Auto-generated shell offline untuk model "${modelId}".
+import * as webllm from "./webllm-runtime.mjs";
+
+const els = {
+  statusDot: document.getElementById("status-dot"),
+  statusText: document.getElementById("status-text"),
+  progressTrack: document.getElementById("progress-track"),
+  progressFill: document.getElementById("progress-fill"),
+  log: document.getElementById("log"),
+  chatLog: document.getElementById("chat-log"),
+  emptyState: document.getElementById("empty-state"),
+  chatForm: document.getElementById("chat-form"),
+  chatInput: document.getElementById("chat-input"),
+  sendBtn: document.getElementById("send-btn"),
+};
+
+function log(line) {
+  els.log.textContent += line + "\\n";
+  els.log.scrollTop = els.log.scrollHeight;
+}
+
+function appendMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg msg-" + role;
+  div.textContent = text;
+  els.chatLog.appendChild(div);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return div;
+}
+
+let history = [];
+let engine;
+
+async function boot() {
+  const cfgRes = await fetch("./model-config.json");
+  const appConfig = await cfgRes.json();
+  const modelId = appConfig.model_list[0].model_id;
+
+  engine = new webllm.MLCEngine();
+  engine.setInitProgressCallback((report) => {
+    els.progressTrack.hidden = false;
+    els.progressFill.style.width = Math.round(report.progress * 100) + "%";
+    els.statusText.textContent = report.text || "Memuat…";
+  });
+
+  try {
+    await engine.reload(modelId, undefined, appConfig);
+    els.statusText.textContent = "Siap — " + modelId;
+    els.statusDot.className = "status-dot ready";
+    els.progressTrack.hidden = true;
+    els.chatInput.disabled = false;
+    els.sendBtn.disabled = false;
+    els.emptyState.hidden = true;
+  } catch (err) {
+    els.statusText.textContent = "Gagal memuat model";
+    els.statusDot.className = "status-dot error";
+    log("Error: " + err.message);
+  }
+}
+
+document.getElementById("chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = els.chatInput.value.trim();
+  if (!text || !engine) return;
+  els.chatInput.value = "";
+  appendMessage("user", text);
+  history.push({ role: "user", content: text });
+  const out = appendMessage("assistant", "…");
+  els.sendBtn.disabled = true;
+  try {
+    const stream = await engine.chat.completions.create({ messages: history, stream: true });
+    let full = "";
+    for await (const chunk of stream) {
+      full += chunk.choices?.[0]?.delta?.content || "";
+      out.textContent = full || "…";
+    }
+    history.push({ role: "assistant", content: full });
+  } catch (err) {
+    out.textContent = "[error] " + err.message;
+  } finally {
+    els.sendBtn.disabled = false;
+  }
+});
+
+boot();
+`;
+  zip.file("js/offline-app.js", offlineAppJs);
+  zip.file("index.html", OFFLINE_INDEX_HTML(modelId));
+
+  onProgress("Menyalin stylesheet…");
+  zip.file("css/style.css", STYLE_CSS_TEXT);
+
+  zip.file(
+    "README.txt",
+    `Paket offline SLM Runner — model: ${modelId}\n\n` +
+      `Cara pakai:\n` +
+      `1. Ekstrak zip ini.\n` +
+      `2. Jalankan static server di folder ini, contoh:\n` +
+      `     npx serve .\n` +
+      `   atau\n` +
+      `     python3 -m http.server 8080\n` +
+      `3. Buka http://localhost:PORT di browser yang mendukung WebGPU (Chrome/Edge terbaru).\n\n` +
+      `PENTING: jangan buka index.html langsung lewat file:// — browser memblokir\n` +
+      `fetch() ke file lokal dari protokol file://, jadi harus lewat http(s)://,\n` +
+      `baik itu server lokal atau hosting statis (GitHub Pages, Netlify, dll).\n`
+  );
+
+  onProgress("Membungkus jadi .zip…");
+  const blob = await zip.generateAsync({ type: "blob" }, (meta) => {
+    onProgress(`Kompresi… ${Math.round(meta.percent)}%`);
+  });
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `slm-runner-offline-${modelId.replace(/[^a-z0-9.-]/gi, "_")}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+
+// ============================================================================
+// SLM Runner — app.js
+//
+// Semua "engine" AI (runtime WASM + JS) DIAMBIL OTOMATIS dari CDN saat
+// halaman dibuka — tidak ada satupun file besar yang perlu dicommit ke repo.
+// Model AI yang dipilih pengguna juga didownload langsung dari sumbernya
+// (Hugging Face, lewat MLC) ke cache browser, lalu dijalankan di GPU
+// pengguna lewat WebGPU. Tidak ada server, tidak ada backend.
+// ============================================================================
+
+// CDN tempat runtime WebLLM diambil. Ganti versi di sini kalau perlu upgrade.
+const WEBLLM_CDN_URL = "https://esm.run/@mlc-ai/web-llm";
+
+// Supaya bundel yang didownload tidak raksasa buat pengguna biasa, daftar
+// model dibatasi ke varian kecil (kira-kira di bawah ~2.5B parameter,
+// kuantisasi 4-bit). Silakan tambah/kurangi ID di sini — ID harus persis
+// sama dengan model_id di prebuiltAppConfig milik WebLLM.
+const PREFERRED_MODEL_HINTS = [
+  "Qwen2.5-0.5B",
+  "Qwen2.5-1.5B",
+  "Llama-3.2-1B",
+  "Llama-3.2-3B",
+  "Phi-3.5-mini",
+  "gemma-2-2b",
+  "SmolLM2-360M",
+  "SmolLM2-1.7B",
+  "TinyLlama-1.1B",
+];
+
+const els = {
+  modelSelect: document.getElementById("model-select"),
+  modelHint: document.getElementById("model-hint"),
+  loadBtn: document.getElementById("load-btn"),
+  statusDot: document.getElementById("status-dot"),
+  statusText: document.getElementById("status-text"),
+  progressTrack: document.getElementById("progress-track"),
+  progressFill: document.getElementById("progress-fill"),
+  log: document.getElementById("log"),
+  exportBtn: document.getElementById("export-btn"),
+  exportHint: document.getElementById("export-hint"),
+  chatLog: document.getElementById("chat-log"),
+  emptyState: document.getElementById("empty-state"),
+  chatForm: document.getElementById("chat-form"),
+  chatInput: document.getElementById("chat-input"),
+  sendBtn: document.getElementById("send-btn"),
+};
+
+let webllm = null;
+let engine = null;
+let currentModelId = null;
+let modelList = [];
+let history = [];
+let isGenerating = false;
+
+function log(line) {
+  const time = new Date().toLocaleTimeString("id-ID", { hour12: false });
+  els.log.textContent += `[${time}] ${line}\n`;
+  els.log.scrollTop = els.log.scrollHeight;
+}
+
+function setStatus(text, kind) {
+  els.statusText.textContent = text;
+  els.statusDot.className = "status-dot" + (kind ? ` ${kind}` : "");
+}
+
+function setProgress(fraction) {
+  if (fraction == null) {
+    els.progressTrack.hidden = true;
+    return;
+  }
+  els.progressTrack.hidden = false;
+  els.progressFill.style.width = `${Math.round(fraction * 100)}%`;
+}
+
+async function checkWebGPU() {
+  if (!("gpu" in navigator)) {
+    setStatus("WebGPU tidak tersedia di browser ini", "error");
+    log("Browser ini tidak mengekspos navigator.gpu. Coba Chrome/Edge versi terbaru.");
+    return false;
+  }
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      setStatus("WebGPU ada, tapi tidak ada GPU adapter", "error");
+      return false;
+    }
+    return true;
+  } catch (err) {
+    setStatus("Gagal inisialisasi WebGPU", "error");
+    log(`Error WebGPU: ${err.message}`);
+    return false;
+  }
+}
+
+async function loadWebLLMRuntime() {
+  log(`Mengambil runtime WebLLM dari CDN (${WEBLLM_CDN_URL})…`);
+  webllm = await import(/* webpackIgnore: true */ WEBLLM_CDN_URL);
+  log("Runtime WebLLM siap.");
+  return webllm;
+}
+
+function populateModelSelect() {
+  const all = webllm.prebuiltAppConfig.model_list;
+
+  // Utamakan model kecil yang cocok dijalankan di laptop/HP biasa.
+  const preferred = all.filter((m) =>
+    PREFERRED_MODEL_HINTS.some((hint) => m.model_id.includes(hint))
+  );
+  modelList = preferred.length > 0 ? preferred : all;
+
+  els.modelSelect.innerHTML = "";
+  for (const m of modelList) {
+    const opt = document.createElement("option");
+    opt.value = m.model_id;
+    const sizeMB = m.vram_required_MB ? ` (~${Math.round(m.vram_required_MB)} MB VRAM)` : "";
+    opt.textContent = m.model_id + sizeMB;
+    els.modelSelect.appendChild(opt);
+  }
+  els.modelSelect.disabled = false;
+  els.loadBtn.disabled = false;
+  updateModelHint();
+}
+
+function updateModelHint() {
+  const m = modelList.find((x) => x.model_id === els.modelSelect.value);
+  if (!m) return;
+  const size = m.vram_required_MB ? `${Math.round(m.vram_required_MB)} MB` : "tidak diketahui";
+  els.modelHint.textContent = `Perkiraan ukuran download & VRAM: ${size}. Didownload sekali, lalu dicache browser.`;
+}
+
+async function loadSelectedModel() {
+  const modelId = els.modelSelect.value;
+  if (!modelId) return;
+
+  els.loadBtn.disabled = true;
+  els.modelSelect.disabled = true;
+  els.exportBtn.disabled = true;
+  isGenerating = false;
+  setStatus("Menyiapkan model…", "busy");
+  setProgress(0);
+  log(`Memuat model: ${modelId}`);
+
+  try {
+    if (!engine) {
+      engine = new webllm.MLCEngine();
+      engine.setInitProgressCallback((report) => {
+        setProgress(report.progress);
+        setStatus(report.text || "Mengunduh…", "busy");
+      });
+    }
+
+    await engine.reload(modelId);
+    currentModelId = modelId;
+    history = [];
+
+    setStatus(`Siap — ${modelId}`, "ready");
+    setProgress(null);
+    log(`Model "${modelId}" berhasil dimuat dan siap dipakai.`);
+
+    els.chatInput.disabled = false;
+    els.sendBtn.disabled = false;
+    els.exportBtn.disabled = false;
+    els.exportHint.textContent = "";
+    els.emptyState.hidden = true;
+  } catch (err) {
+    setStatus("Gagal memuat model", "error");
+    setProgress(null);
+    log(`Error saat memuat model: ${err.message}`);
+  } finally {
+    els.loadBtn.disabled = false;
+    els.modelSelect.disabled = false;
+  }
+}
+
+function appendMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = `msg msg-${role}`;
+  div.textContent = text;
+  els.chatLog.appendChild(div);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return div;
+}
+
+async function sendMessage(e) {
+  e.preventDefault();
+  const text = els.chatInput.value.trim();
+  if (!text || !engine || isGenerating) return;
+
+  els.chatInput.value = "";
+  appendMessage("user", text);
+  history.push({ role: "user", content: text });
+
+  const assistantEl = appendMessage("assistant", "…");
+  isGenerating = true;
+  els.sendBtn.disabled = true;
+
+  try {
+    const stream = await engine.chat.completions.create({
+      messages: history,
+      stream: true,
+      temperature: 0.7,
+    });
+
+    let full = "";
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content || "";
+      full += delta;
+      assistantEl.textContent = full || "…";
+      els.chatLog.scrollTop = els.chatLog.scrollHeight;
+    }
+
+    history.push({ role: "assistant", content: full });
+
+    const stats = await engine.runtimeStatsText?.();
+    if (stats) {
+      const meta = document.createElement("div");
+      meta.className = "msg-meta";
+      meta.textContent = stats;
+      assistantEl.appendChild(document.createElement("br"));
+      assistantEl.appendChild(meta);
+    }
+  } catch (err) {
+    assistantEl.textContent = `[error] ${err.message}`;
+    log(`Error saat generate: ${err.message}`);
+  } finally {
+    isGenerating = false;
+    els.sendBtn.disabled = false;
+    els.chatInput.focus();
+  }
+}
+
+async function handleExport() {
+  if (!currentModelId) return;
+  els.exportBtn.disabled = true;
+  try {
+    await exportOfflineBundle({
+      modelId: currentModelId,
+      webllmCdnUrl: WEBLLM_CDN_URL,
+      onProgress: (msg) => {
+        els.exportHint.textContent = msg;
+        log(`[export] ${msg}`);
+      },
+    });
+    els.exportHint.textContent = "Selesai — cek folder Downloads kamu.";
+  } catch (err) {
+    els.exportHint.textContent = `Gagal export: ${err.message}`;
+    log(`[export] Error: ${err.message}`);
+  } finally {
+    els.exportBtn.disabled = false;
+  }
+}
+
+// Auto-resize textarea
+els.chatInput.addEventListener("input", () => {
+  els.chatInput.style.height = "auto";
+  els.chatInput.style.height = `${Math.min(els.chatInput.scrollHeight, 160)}px`;
+});
+els.chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    els.chatForm.requestSubmit();
+  }
+});
+
+els.modelSelect.addEventListener("change", updateModelHint);
+els.loadBtn.addEventListener("click", loadSelectedModel);
+els.chatForm.addEventListener("submit", sendMessage);
+els.exportBtn.addEventListener("click", handleExport);
+
+// ===== Boot =====
+(async function init() {
+  const ok = await checkWebGPU();
+  if (!ok) return;
+
+  setStatus("Mengambil runtime & daftar model…", "busy");
+  try {
+    await loadWebLLMRuntime();
+    populateModelSelect();
+    setStatus("Pilih model, lalu muat", null);
+  } catch (err) {
+    setStatus("Gagal mengambil runtime dari CDN", "error");
+    log(`Error: ${err.message}. Cek koneksi internet lalu reload halaman.`);
+  }
+})();
+
+</script>
+</body>
+</html>
